@@ -1,0 +1,327 @@
+\documentclass{article}
+\usepackage{enumitem}
+\newtheorem{example}{Example}
+\begin{document}
+
+\title{Fall B561 Assignment 1 \\
+Relational Databases, Expressing Queries and Constraints in SQL and in Tuple Relational Calculus (TRC)\footnote{This assignment covers lectures 1 through 4}.}
+\author{Dirk Van Gucht}
+\date{Released: Tuesday August 24, 2021\\ Due: Wednesday September 8, 2021 by 11:45pm}
+\maketitle
+
+
+\section{Introduction}
+
+The goals for this assignment are to 
+\begin{enumerate}
+\item become familiar with the PostgreSQL system\footnote{To solve this assignment, you will need to download and install PostgreSQL (version 12 or higher) on your computer.};
+\item create a relational database and populate it with data;
+\item examine the side-effects on the state of the database caused by inserts and deletes in the presence or absence
+of primary and foreign key constraints;
+\item formulate some queries in SQL and evaluate them in PostgreSQL; and
+\item translate TRC queries to SQL and 
+formulate queries and constraints in TRC.\footnote{To solve problems related to TRC, follow the syntax and semantics described in the {\tt TRC\_SQL.pdf} document
+in the module \emph{Tuple Relational Calculus and SQL (lecture 4)}.   That document contains multiple examples of
+TRC queries and constraints and how they can be translated to SQL.}
+\end{enumerate}
+
+To turn in your assignment, you will need to upload to Canvas a single file with name {\tt assignment1.sql} which contains 
+the necessary SQL statements that solve the problems in this assignment.   
+The {\tt assignment1.sql} file must be such that the AI's can run it in their PostgreSQL environment.  
+In addition, you will need to upload a separate {\tt assignment1.txt} file that contains the results of running
+your queries.
+We have posted the exact requirements and an example for uploading your solution files.  (See the module
+{\tt Instructions for turning in assignments}.)
+Finally, you will need to upload an {\tt assignment1.pdf} file that contains the solutions for problems related to TRC.\footnote{It is strongly recommended that you use Latex to write TRC formulas and queries.
+For a good way to learn about Latex, look at 
+%\begin{verbatim}
+https://www.overleaf.com/learn/latex/Free\_online\_introduction\_to\_LaTeX\_(part\_1).
+%\end{verbatim}
+You can also inspect the Latex source code for this assignment as well as the document TRC\_SQL.tex provided in Module 4.}
+
+
+
+For the problems in this assignment we will use the following database schema:\footnote{The primary key, which may consist of one or more attributes, of each of these relations is underlined.}
+
+\begin{center}
+{\tt
+  \begin{tabular}{l}
+  {Person}($\underline{\tt pid}$, pname, city) \\
+  {Company}($\underline{\tt cname}, {\tt headquarter}$) \\
+  {Skill}($\underline{\tt skill}$) \\
+  {worksFor}($\underline{\tt pid}$, cname, salary) \\
+  {companyLocation}($\underline{\tt cname}, {\tt city}$) \\
+  {personSkill}($\underline{\tt pid, skill}$) \\
+  {hasManager}($\underline{\tt eid, mid}$) \\
+  \end{tabular}
+  }
+\end{center}
+
+In this database we maintain a set of persons ({\tt Person}), a set
+of companies ({\tt Company}), and a set of (job) skills ({\tt Skill}).  
+The {\tt pname} attribute in {\tt Person} is the name of the person.  
+The {\tt city} attribute in {\tt Person} specifies the city in which the person lives.  
+The {\tt cname} attribute in {\tt Company} is the name of the company.
+The {\tt headquarter} attribute in {\tt Company} is the name of the city wherein the company has its headquarter.
+The {\tt skill} attribute in {\tt Skill} is the name of a (job) skill.
+
+A person can work for at most one company. This information is maintained in the {\tt worksFor} relation. (We permit that a person does not work for any company.)
+The {\tt salary} attribute in {\tt worksFor} specifies the salary made by the person.
+
+The {\tt city} attribute in {\tt companyLocation} indicates a city in which the company is located.
+(Companies may be located in multiple cities.)
+
+A person can have multiple job skills. This information is maintained in the {\tt personSkill} relation.  A job skill can be
+the job skill of multiple persons.  (A person may not have any job skills, and a job skill may
+have no persons with that skill.)
+
+A pair $(e,m)$ in {\tt hasManager} indicates that person $e$ has  
+person $m$ as one of his or her managers.
+We permit that an employee has multiple managers and that a manager  may manage
+multiple employees.  (It is possible that an employee has no manager
+and that an employee is not a manager.)
+We further require that 
+an employee and his or her managers must work for the
+same company.
+
+The domain for the attributes {\tt pid}, {\tt salary}, {\tt eid}, and {\tt mid} is {\tt integer}.   The domain for all other attributes is {\tt text}.
+\newpage
+We assume the following foreign key constraints:
+\begin{itemize}
+\item {\tt pid} is a foreign key in {\tt worksFor} referencing the primary key {\tt pid} in {\tt Person};
+\item {\tt cname} is a foreign key in {\tt worksFor} referencing the primary key {\tt cname} in {\tt Company};
+\item {\tt cname} is a foreign key in {\tt companyLocation} referencing the primary key {\tt cname} in {\tt Company};
+\item {\tt pid} is a foreign key in {\tt personSkill} referencing the primary key {\tt pid} in {\tt Person};
+\item {\tt skill} is a foreign key in {\tt personSkill} referencing the primary key {\tt skill} in {\tt Skill};
+\item {\tt eid} is a foreign key in {\tt hasManager} referencing the primary key {\tt pid} in {\tt Person}; and
+\item {\tt mid} is a foreign key in {\tt hasManager} referencing the primary key {\tt pid} in {\tt Person};
+
+\end{itemize}
+
+The file {\tt data.sql} contains the data supplied for this assignment.
+
+\newpage
+\section{Database creation and impact of constraints on insert and delete statements.}
+
+Create a database in PostgreSQL that stores the data provided in the {\tt data.sql} file.
+Make sure to specify primary and foreign keys.
+
+\begin{enumerate}
+\item Provide 4 conceptually different examples that illustrate how the presence or absence of primary and
+  foreign keys affect insert and deletes in these relations.   To solve this problem,
+  you will need to experiment with the  relation schemas and instances for this assignment.   
+  For example, 
+  you should consider altering primary keys and foreign key constraints and
+  then consider various sequences of insert and delete operations.   You may need to change some of the
+  relation instances to observe the desired effects.
+  Certain inserts and deletes should succeed but other should generate error conditions.
+  (Consider the lecture notes about keys, foreign keys, and inserts and deletes as a guide to solve this problem.)
+  \end{enumerate}
+ \newpage
+  \section{Formulating queries in SQL}\label{SQLQueries}
+
+For this assignment,  you are required to 
+use  tuple variables in your SQL statements.   
+For example, in formulating the query ``Find the pid and pname of each person who lives in Bloomington" you should write the query
+
+\begin{center}{\tt
+\begin{tabular}{ll}
+SELECT &p.pid, p.pname\\
+FROM & Person p\\
+WHERE & p.city = `Bloomington'
+\end{tabular}}
+\end{center}
+rather than
+\begin{center}{\tt
+\begin{tabular}{ll}
+SELECT &pid, pname\\
+FROM & Person\\
+WHERE & city = `Bloomington' 
+\end{tabular}}
+\end{center}
+
+Write SQL statements for the following queries.   
+Make sure that each of your queries returns a set but not a bag.  In other words, make appropriate use of the
+{\tt DISTINCT} clause where necessary.
+
+ You can {\bf not} use the SQL JOIN operations or SQL aggregate functions
+such as {\tt COUNT}, {\tt SUM}, {\tt MAX}, {\tt MIN}, etc in your solutions.
+\begin{enumerate}[resume]
+\item Find the pid, pname of each person who (a) lives in Bloomington, 
+(b) works for a company where he or she earn a salary that is higher than 30000, and (c) has at least one manager.
+\item Find the pairs $(c_1, c_2)$ of names of companies whose headquarters are located in the same city.
+\item Find the pid and pname of each person who lives in a city that is different than each city in which his or her managers live.
+(Persons who have no manager should not be included in the answer.)
+\item Find each skill that is the skill of at most 2 persons.
+\item Find the pid, pname, and salary of each employee who has at least two managers such that these managers have a common job skill but provided that it is not the `Networks' skill.
+\item Find the cname of each company that not only employs persons                                                                      
+who live in MountainView. 
+(In other words, there exists at least one employee of such a company
+who does not live in MountainView.)
+\item For each company, list its name along with the highest salary made by employees who work for it.
+\item Find the pid and pname of each employee who has a salary that is higher than the salary of each of his or her managers.
+(Employees who have no manager should not be included.)
+
+\end{enumerate}
+
+\section{Translating TRC queries to SQL}
+
+Consider the following queries formulated in TRC.   Translate each of these queries to an equivalent SQL query.\footnote{
+You can not use SQL {\tt JOIN} operations or
+aggregate functions.}
+
+You should note that this translating, modulo the handling of universal quantifiers, is almost a syntactic rewrite of the way in which the queries are formulated in TRC.
+This underscores the close correspondence between TRC and SQL.
+
+The SQL queries should be included in the {\tt assignment1.sql} file and their outputs should be reported in the
+{\tt assignment.txt} file.
+
+\begin{enumerate}[resume]
+\item 
+{\small
+\[
+\begin{array}{ll}
+\{p.pid, p.pname, w.cname, w.salary\mid Person(p) \land worksFor(w)\land p.pid = w.pid\\
+\qquad p.city = \mbox{\rm `Bloomington'}\, \land\, 40000 \leq w.salary\, \land\, w.cname \neq \mbox{\rm `Apple'}\}.
+\end{array}
+\]
+}
+
+
+\item 
+{\small
+\[
+\begin{array}{ll}
+\{p.pid, p.pname\mid Person(p) \land \\
+\quad \exists c \exists w (Company(c) \land worksFor(w) \land c.cname = w.cname \land p.pid = w.pid \land c.headquarter = \mbox{\rm `LosGatos'} \land \\
+\quad \quad \exists hm \exists m (hasManager(hm) \land Person(m)\land 
+ hm.eid = p.pid \land hm.mid = m.pid \land m.city \neq \mbox{\rm `LosGatos}))\}.
+\end{array}
+\]
+}
+
+In abbreviated form,
+{\small
+\[
+\begin{array}{ll}
+\{p.pid, p.pname\mid Person(p) \land \\
+\quad \exists c\in Company\, \exists w\in worksFor (c.cname = w.cname \land p.pid = w.pid \land c.headquarter = \mbox{\rm `LosGatos'} \land \\
+\quad \quad \exists hm\in hasManager\, \exists m\in Person (hm.eid = p.pid \land hm.mid = m.pid \land m.city \neq \mbox{\rm `LosGatos}))\}.
+\end{array}
+\]
+}
+
+\item 
+{\small
+\[
+\begin{array}{ll}
+\{s.skill\mid Skill(s) \land \lnot (\exists p\exists ps\, Person(p) \land personSkill(ps)\land  p.pid = ps.pid\land \\
+\qquad ps.skill = s.skill \land p.city = \mbox{`Bloomington'})\}.
+\end{array}
+\]
+}
+
+In abbreviated form,
+{\small
+\[
+\begin{array}{ll}
+\{s.skill\mid Skill(s) \land \lnot (\exists p\in Person\, \exists ps\in personSkill (p.pid = ps.pid\land \\
+\qquad ps.skill = s.skill \land p.city = \mbox{`Bloomington'})\}.
+\end{array}
+\]
+}
+
+\item 
+{\small
+\[
+\begin{array}{ll}
+\{m.pid, m.pname\mid Person(m) \land \\
+\qquad \forall hm ((hasManager(hm)\land hm.mid = m.pid)\rightarrow 
+\exists e (Person(e)\land hm.eid = e.pid \land e.city = m.city))\}
+\end{array}
+\]
+}
+
+In abbreviated form,
+{\small
+\[
+\begin{array}{ll}
+\{m.pid, m.pname\mid Person(m) \land \\
+\qquad \forall hm\in hasManager(hm.mid = m.pid \rightarrow 
+\exists e\in Person (hm.eid = e.pid \land e.city = m.city))\}
+\end{array}
+\]
+}
+
+\end{enumerate}
+\newpage
+\section{Formulating queries in the Tuple Relational Calculus}
+
+Formulate each of the queries in the even-numbered  problems (i.e., problems 2, 4, 6, and 8) 
+in Section~\ref{SQLQueries} as TRC queries.
+
+The solutions of these problems should be included in the {\tt assignment1.pdf} file.
+
+\begin{enumerate}[resume]
+\item (Problem 2) Find the pid, pname of each person who (a) lives in Bloomington, 
+(b) works for a company where he or she earn a salary that is higher than 30000, and (c) has at least one manager.
+
+\item (Problem 4) Find the pid and pname of each person who lives in a city that is different than each city in which his or her managers live.
+(Persons who have no manager should not be included in the answer.)
+
+\item (Problem 6) Find the pid, pname, and salary of each employee who has at least two managers such that these managers have a common job skill but provided that it is not the `Networks' skill.
+
+\item (Problem 8) For each company, list its name along with the highest salary made by employees who work for it.
+
+\end{enumerate}
+\newpage
+
+\section{Formulating constraints in the Tuple Relational Calculus}
+
+Formulate the following constraints in TRC and as boolean SQL queries.    
+
+The TRC solutions of these problems should be included in the {\tt assignment1.pdf} file and
+the SQL solutions should be included in the {\tt assignment1.sql} file.
+
+Here is an example of what is expected for your answers.
+
+\begin{example}
+Consider the constraint ``\emph{Each skill is the skill of a person.}''
+In TRC, this constraint can be formulated as follows:
+$$
+\begin{array}{l}
+\forall s\ Skill(s) \rightarrow \exists ps\, (personSkill(ps) \land ps.skill = s.skill)
+\end{array}
+$$
+or, alternatively
+$$
+\begin{array}{l}
+\lnot \exists s (Skill(s) \land \lnot \exists ps (personSkill(ps) \land ps.skill = s.skill)).
+\end{array}
+$$
+This constraint can be specified using the following boolean SQL query.
+\begin{verbatim}
+select not exists (select 1
+      	      	     from	  Skill	s
+      	      	     where  not exists (select 1
+      	      	      	      	          from   personSkill ps
+      	      	      	      	          where  ps.skill = s.skill));
+\end{verbatim}
+
+\end{example}
+
+
+\begin{enumerate}[resume]
+
+\item  Each person works for a company and has at least two job skills.
+
+\item  Some person has a salary that is strictly higher than the salary of each of his or her managers.
+
+
+\item  Each employee and his or her managers work for the same company.
+
+
+\end{enumerate}
+
+
+\end{document}

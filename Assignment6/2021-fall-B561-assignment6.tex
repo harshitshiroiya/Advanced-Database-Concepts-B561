@@ -1,0 +1,856 @@
+\documentclass{article}
+
+\usepackage{enumitem}
+\usepackage{amssymb}
+\usepackage{amsmath}
+\usepackage{fancyvrb}
+\usepackage{venndiagram}
+\usepackage{tikz}
+\newtheorem{example}{Example}
+\usepackage{alltt,xcolor}
+\usepackage{graphicx}
+
+\newcommand{\redbullet}{$\textcolor{red}{\bullet}$}
+\newcommand{\bluebullet}{$\textcolor{blue}{\bullet}$}
+
+\newcommand{\red}[1]{\textcolor{red}#1}
+\newcommand{\green}[1]{{\color{green}#1}}
+\newcommand{\blue}[1]{{\color{blue}#1}}
+\newcommand{\purple}[1]{{\color{purple}#1}}
+\newcommand{\orange}[1]{{\color{orange}#1}}
+\newcommand{\hashjoin}[1]{\begin{array}{c} \mathtt{hashJoin} \\ \bowtie\\ {#1}\\ \end{array}}
+\newcommand{\mergejoin}[1]{\begin{array}{c} \mathtt{mergeJoin} \\ \bowtie\\ {#1}\\ \end{array}}
+\newcommand{\indexjoin}[1]{\begin{array}{c} \mathtt{indexJoin} \\ \bowtie\\ {#1}\\ \end{array}}
+\newcommand{\nestedjoin}[1]{\begin{array}{c} \mathtt{nestedLoopJoin} \\ \bowtie\\ {#1}\\ \end{array}}
+
+\newcommand{\sortprojection}[1]{\begin{array}{c} \mathtt{sortProjection} \\ \pi_{#1}\ \end{array}}
+\newcommand{\hashprojection}[1]{\begin{array}{c} \mathtt{hashProjection} \\ \pi_{#1}\ \end{array}}
+\newcommand{\scan}[1]{\begin{array}{c} \mathtt{scan} \\ {#1}\ \end{array}}
+\newcommand{\filter}[1]{\begin{array}{c} \mathtt{filterSelection}\\ \sigma_{#1}\ \end{array}}
+\newcommand{\filterscan}[2]{\begin{array}{c} \mathtt{filterScan}\\ \sigma_{#1}(#2)\ \end{array}}
+\newcommand{\sortfilterscan}[2]{\begin{array}{c}\mathtt{sort} \mathtt{filterScan}\\ \sigma_{#1}(#2)\ \end{array}}
+
+\begin{document}
+
+\title{B561 Assignment 6\\
+Data Generation \\Sorting \\ Indexing \\ (Draft: Version 1)}
+\author{Dirk Van Gucht}
+\date{}
+\maketitle
+
+For this assignment, you will need the material covered in the lectures
+\begin{itemize}
+\item Lecture 15: External Merge Sorting
+\item Lecture 16: Indexing
+\item Lecture 17: $\text{B}^+$ trees and Hashing
+\end{itemize} 
+In addition, you should read the following sections in Chapter 14 and 15 in the textbook \emph{Database Systems The Complete Book} by Garcia-Molina, Ullman, and Widom:
+\begin{itemize}
+\item Section 14.1: Index-structure Basics
+\item Section 14.2: B-Trees
+\item Section 14.3: Hash Tables
+\item Section 14.7: Bitmap Indexes
+\item Section 15.8.1: Multipass Sort-Based Algorithms
+\end{itemize} 
+
+In the file {\tt performingExperiments.sql} supplied with this assignment, we have include several
+PostgreSQL functions that should be useful for running experiments.     Of course, you may wish to write your own functions and/or adopt the functions in this .sql to suite the required experiments for the various problems in this assignment.
+
+The problems that need to be included in the {\tt assignment6.sql} are marked with a blue bullet \bluebullet.
+The problems that need to be included in the {\tt assignment6.pdf} are marked with a red bullet \redbullet.
+(You should aim to use Latex to construct your .pdf file.)
+In addition, submit a file {\tt assignment6Code.sql} that contains all the sql code that you developed for this assignment.
+
+Practice problems should not be submitted.
+
+
+\newpage
+\section{Data generation}
+
+\paragraph{PostgreSQL functions and clauses}
+
+\medskip
+In this assignment there will be a need to do simulations with various-size relations.   Many of these relations will have randomized data.
+PostgreSQL provides useful functions and clauses that make such relations:
+
+{\footnotesize
+\begin{center}
+\begin{tabular}{ll}
+$\mathtt{random()}$ & returns a random real number between $0$ and $1$ using the uniform distribution\\
+$\mathtt{floor(random() * (u-l+1) + l)::int}$ & returns a random integer in the range $[l,u]$ using the uniform distribution\\
+$\mathtt{generate\_series(m,n)}$ & generates the set of integers in the range $[m,n]$\\
+$\mathtt{generate\_series(m,n,k)}$ & generates the set of integers in the range $[m,n])$ separated by step-size $k$\\
+{\tt order by random()} & randomly orders the tuples that are the result of a query\\
+$\mathtt{limit(n)}$ & returns the first $n$ tuples from the result of a query \\ 
+$\mathtt{offset(n)}$ & returns all but the first $n$ tuples from the result of a query \\
+$\mathtt{limit(m)\ offset(n)}$ & returns the first $m$ tuples from all but the first $n$ tuples from the result of a query\\
+$\mathtt{row\_number()}$& is a \emph{window function} that assigns a sequential integer to each row in a result set\\
+$\mathtt{vacuum}$ & is a \emph{garbage collection} function to clean and reclaim secondary memory space
+\end{tabular}
+\end{center}
+}
+For more detail, consult the manual pages
+\begin{alltt}
+https://www.postgresql.org/docs/13/functions-math.html   
+https://www.postgresql.org/docs/current/functions-srf.html   
+https://www.postgresql.org/docs/current/queries-limit.html
+https://www.postgresql.org/docs/8.4/functions-window.html
+https://www.postgresql.org/docs/9.5/routine-vacuuming.html
+\end{alltt}
+
+In the file {\tt performingExperiments.sql} supplied with this assignment, we have include several
+PostgreSQL functions that should be useful for running experiments.     Of course, you may wish to write your own functions and/or adopt the functions in this .sql to suite the required experiments for the various problems in this assignment.
+
+\paragraph{Generating sets}
+To generate a set, i.e., a unary relation, of $n$ randomly selected integers in the range $[l,u]$, you can use the
+following function:\footnote{Typically the
+function {\tt SetOfIntegers} returns a bag (multiset) but this is fine for this assignment.  In case we want a
+set, we can always eliminate duplicates.}
+{\small
+\begin{alltt}
+\textcolor{blue}{create or replace function SetOfIntegers(n int, l int, u int) 
+    returns table (x int) as
+$$
+    select floor(random() * (u-l+1) + l)::int from generate_series(1,n); 
+$$ language sql;}
+  \end{alltt}
+  }
+ \begin{example}
+To generate a unary relation with $3$ randomly selected integers in the range $5$ to $10$,  do the following:
+{
+\begin{center}
+\begin{tabular}{l}
+\textcolor{blue}{
+{\tt select x from SetofIntegers(3,5,10);}}
+\end{tabular}
+\end{center}
+}
+Of course, running this query multiple times, result in different sets.
+\end{example}
+
+\newpage
+\paragraph{Generating binary relations} 
+The idea behind generating a set can be generalized to that for the generation of a binary relation.\footnote{Clearly, all of this can be generalized to higher-arity relations.} 
+To generate a binary relation of $n$ randomly selected pairs of integers $(x,y)$ such 
+$x\in [l_1,u_1]$ and $y\in [l_2,u_2]$, you can use the following function:
+{\small
+\begin{alltt}
+\textcolor{blue}{create or replace function 
+BinaryRelationOverIntegers(n int, l_1 int, u_1 int, l_2 int, u_2 int) 
+   returns table (x int, y int) as
+$$
+   select floor(random() * (u_1-l_1+1) + l_1)::int as x, 
+          floor(random() * (u_2-l_2+1) + l_2)::int as y
+   from   generate_series(1,n);
+$$ language sql;}
+\end{alltt}
+}
+
+\begin{example}
+To generate a binary relation with $20$ randomly selected pairs with first components in the range $[3,8]$
+and second components in the range $[2,11]$,  do the following:
+{
+\begin{center}
+\begin{tabular}{l}
+\textcolor{blue}{
+{\tt select x, y from BinaryRelationOverIntegers(20,3,8,2,11);}}
+\end{tabular}
+\end{center}
+}
+\end{example}
+
+\paragraph{Generating functions}
+A relation generated by {\tt BinaryRelationOverIntegers} is in general not a function since it is
+possible that the relation has pairs $(x,y_1)$ and $(x,y_2)$ with
+$y_1\neq y_2$.
+To create a (partial) \emph{function} $f: [l_1,u_1]\rightarrow [l_2,u_2]$ of $n$ randomly selected
+function pairs, we can use the following function:
+{\small
+\begin{alltt}
+\textcolor{blue}{create or replace function 
+FunctionOverIntegers(n int, l_1 int, u_1 int, l_2 int, u_2 int) 
+   returns table (x int, y int) as
+$$
+   select x, floor(random() * (u_2-l_2+1) + l_2)::int as y
+   from   generate_series(l_1,u_1) x order by random() limit(n);
+$$ language sql;}
+\end{alltt}
+}
+
+\begin{example}
+To generate a partial function $[1,20]\rightarrow [3,8]$ of $15$ randomly selection function pairs, do the following:\footnote{When using this function, it is customary to use $n$ such that $n\in [0,u_1-l_1+1]$.}
+{
+\begin{center}
+\begin{tabular}{l}
+\textcolor{blue}{
+{\tt select x, y from FunctionOverIntegers(15,1,20,3,8);}}
+\end{tabular}
+\end{center}
+}
+\end{example}
+
+\newpage
+\paragraph{Generating relations with categorical (non-numeric) data}
+
+Thus far, the sets, binary relations, and functions have all just involved integer ranges.  It is possible to include ranges that
+have different types including categorical data such as text strings.   
+The technique to accomplish this is to first associate with a categorical range an integer range that associate with each element
+in the categorical range a unique value of the integer range.
+The next example illustrates this.
+\begin{example}
+Consider the {\tt jobSkill} relation and assume that it contents is
+\begin{center}
+{\tt
+\begin{tabular}{l}
+{\tt skill} \\ \hline
+\begin{tabular}{l}
+AI \\
+Databases \\
+Networks \\ 
+OperatingSystems\\
+Programming \\
+\end{tabular}
+\end{tabular}}
+\end{center}
+Suppose that we want to generate a {\tt personSkill(pid, skill)} relation.    Let us assume that the {\tt pid}'s are integers in the range
+$[1,m]$.  
+
+There are $5$ skills in the {\tt jobSkill} and it is therefore natural
+to associate with each skill a separate integer (index value) in the range $[1,5]$.     This can be done with a query involving the
+{\tt row\_number()} window function:
+\begin{alltt}{\blue{
+select skill, row\_number() over (order by skill) as index 
+from   Skill;}}
+\end{alltt}
+
+The result is the following relation:
+\begin{center}
+{\tt
+\begin{tabular}{lc}
+{\tt skill} &{\tt index} \\ \hline
+AI & 1\\
+Databases & 2\\
+Networks & 3\\
+OperatingSystems &4\\ 
+Programming & 5 \\
+\end{tabular}}
+\end{center}
+Using this technique, we can write a PostgreSQL function  that generates a {\tt personSkill} relation
+with $n$ randomly selected $(pid,skill)$ tuples, with {\tt pid}'s in the range $[l,u]$:
+
+{\small
+\begin{alltt}
+\textcolor{blue}{create or replace function GeneratepersonSkillRelation(n int, l int, u int) 
+returns table (pid int, skill text) as
+$$
+with skillNumber(skill, index) as (select skill, row_number() over (order by skill) 
+                                   from   Skill),
+     pS as (select x, y
+            from   BinaryRelationOverIntegers(n,l,u,1, (select count(1) from Skill)::int))
+select x as pid, skill
+from   pS join skillNumber on y = index
+group by (x, skill) order by 1,2;
+$$ language sql;}
+\end{alltt}
+}
+In this function, the {\tt skillNumber} view associates with each job skill an integer index in the range $[1,|{\tt Skill}|]$.
+The {\tt pS} view is a randomly generated binary relation with $n$ tuples, with {\tt pid}'s in the range $[l,u]$,
+and skill numbers in the range $[1,|{\tt Skill}|]$.  The \blue{{\tt join}} operation associates the numeric range with the {\tt Skill}
+range. The `\blue{\tt group by (x, skill) order by 1,2}' clause eliminates duplicate tuples and orders the result.
+
+The query 
+\begin{alltt}\blue{
+select * from GeneratepersonSkillRelation(10,1,15);}
+\end{alltt}
+may make the {\tt personSkill} relation:
+
+\begin{center}
+{\tt
+\begin{tabular}{cl}
+ pid      & skill       \\ \hline
+   1 & AI \\
+   2 & Programming\\
+   3 & Databases\\
+   4 & Databases\\
+   6 & Networks\\
+   6 & OperatingSystems\\
+   6 & Programming\\
+   9 & Databases\\
+  14 & Databases\\
+  14 & Networks\\
+\end{tabular}}
+\end{center}  
+
+\end{example}
+
+
+\paragraph{Problems}
+We now turn to the problems in this section.
+\begin{enumerate}[resume]
+\item\label{probdistribution}\bluebullet\  Given a discrete probability mass function $P$, as specified in a relation {\tt P(outcome: int, probability: float)}, over a range of possible outcomes $[u_2,l_2]$, design a PostgreSQL function 
+\[\mathtt{RelationOverProbabilityFunction}(n,l_1,u_1,l_2,u_2)\] that generates a relation of up to $n$ pairs $(x,y)$ such that
+\begin{itemize}
+\item  $x$ is uniformly selected in the range $[l_1,u_1]$; and
+\item  $y$ is selected in accordance with the probability mass function $P$ in the range $[l_2,u_2]$.
+\end{itemize}
+
+An example of a possible $P$ as stored in relation {\tt P} is as follows:\footnote{Notice that the sum of the probabilities in the {\tt probability} column in {\tt P} sum to $1$.}
+\begin{center}
+{\tt 
+\begin{tabular}{c} \\
+P \\
+\begin{tabular}{cc}
+outcome & probability \\ \hline
+1 & $0.25$ \\ 
+2 & $0.10$ \\
+3 & $0.40$ \\
+4 & $0.10$ \\
+5 & $0.15$ \\
+\end{tabular}
+\end{tabular}
+}
+\end{center}
+
+Note that when $P$ is the uniform probability mass function, then
+\[\mathtt{RelationOverProbabilityFunction}\]
+and
+\[\mathtt{BinaryRelationOverIntegers}\] are the same binary relation producing functions.
+
+{\bf Hint}:  For insight into this problem, consult the method of 
+\emph{Inverse Transform Sampling} for discrete probability mass functions.
+
+Test your function for the cases listed in the {\tt Assignment-Script-2021-Fall-assignment6.sql} file.
+
+\item \textcolor{red}{\bf Practice Problem-not graded}.
+
+Use the technique in Problem~\ref{probdistribution} and the method for generating categorical data discussed above to
+write a PostgreSQL function that generates a {\tt personSkill} relation, given a probability mass function over the {\tt Skill} relation.   
+
+Your function should work for any {\tt Skill} relation and any probability distribution defined over it.
+\end{enumerate}
+
+Test your function for the cases listed in the {\tt Assignment-Script-2021-Fall-assignment6.sql} file.
+
+\newpage
+\section{Sorting}
+
+We have learned about \emph{external sorting}.   The problems in this section are designed to look into this sorting method as it implemented in PostgreSQL.
+
+\begin{enumerate}[resume]
+\item \redbullet\ \label{sortTime}   Create successively larger sets of $n$ randomly selected integers in the range $[1,n]$.     You can do this  using the following function and with the following experiment.\footnote{You should make it a habit to use the PostgreSQL \blue{\tt vacuum} function to perform garbage collection between experiments.} 
+
+{\small \begin{alltt}
+\textcolor{blue}{create or replace function makeS (n integer)
+returns void as
+$$
+begin 
+    drop table if exists S;
+    create table S (x int);
+    insert into S select * from SetOfIntegers(n,1,n);
+end;    
+$$ language plpgsql;}
+\end{alltt}}
+This function generates a bag $S$ of size $n$, with randomly select integers in the range $[1,n]$.
+Now consider the following SQL statements:
+\begin{center}
+\begin{alltt}
+\textcolor{blue}{select makeS(10);
+explain analyze {select x from S;}
+explain analyze {select x from S order by 1;}}
+\end{alltt}
+\end{center}
+
+\begin{itemize}
+\item The `\blue{\tt select makeS(10)}' statement makes a bag $\mathtt{S}$ with 10 elements;
+\item The `\blue{\tt explain analyze {select x from S}}' statement provides the query plan and execution time in milliseconds (ms) for a simple scan of {\tt S};
+\item The `\blue{\tt explain analyze {select x from S order by 1}}' statement provides the query plan and \textcolor{red}{execution time} in milliseconds (ms) for sorting {\tt S}.\footnote{Recall that 1ms is $\frac{1}{1000}$ second.}
+\end{itemize}
+
+\begin{center}
+{\footnotesize
+\begin{alltt}
+\textcolor{blue}{
+    QUERY PLAN                                              
+------------------------------------------------------------------------------------------------------
+ Sort  (cost=179.78..186.16 rows=2550 width=4) (actual time=0.025..0.026 rows=10 loops=1)
+   Sort Key: x
+   Sort Method: quicksort  Memory: 25kB
+   ->  Seq Scan on s  (cost=0.00..35.50 rows=2550 width=4) (actual time=0.004..0.005 rows=10 loops=1)
+ Planning Time: 0.069 ms
+ \textcolor{red}{Execution Time: 0.034 ms}}
+\end{alltt}
+}
+\end{center}
+
+Now construct the following timing table:\footnote{It is possible that you may not be able to run the experiments for the largest {\tt S}.   If that is the case, just report the results for the smaller sizes.}
+\begin{center}
+\begin{tabular}{c|c|c}
+size $n$ of relation {\tt S} & avg execution time to \textcolor{red}{scan} {\tt S} (in ms) &avg execution time to \textcolor{red}{sort} {\tt S} (in ms) \\ \hline
+$10^1$ & & \\
+$10^2$ & & \\
+$10^3$ &  & \\
+$10^4$ & & \\
+$10^5$ &  & \\
+$10^6$ &  & \\
+$10^7$ & & \\
+$10^8$ &  & \\
+\end{tabular}
+\end{center}
+
+\begin{enumerate}
+\item\label{sortTimea} What are your observations about the query plans for the scanning and sorting of such differently sized bags {\tt S}?
+\item What do you observe about the execution time to sort {\tt S} as a function of $n$?
+\item Does this conform with the formal time complexity of (external) sorting?  Explain.
+\item It is possible to set the \emph{working memory} of PostgreSQL using the \blue{{\tt set work\_mem}}
+command.   For example, \blue{{\tt set work\_mem = '16MB'}} sets the working memory to 16MB.\footnote{The default working memory size is 4MB.}   The smallest possible working memory in postgreSQL is 64kB and the largest depends on you computer memory size.   But you can try for example 1GB.
+
+Repeat question~\ref{sortTimea} for memory sizes 64kB and 1GB and report your observations.
+
+\item  Now create a relation {\tt indexedS(x integer)} and create a Btree index on {\tt indexedS} and insert into {\tt indexedS} the sorted relation {\tt S}.\footnote{For information about \emph{indexes} in PostgreSQL consult the manual page
+{\tt https://www.postgresql.org/docs/13/indexes.html}.}
+\begin{alltt}
+\textcolor{blue}{
+create table indexedS (x integer);
+create index on indexedS using btree (x);
+insert into indexedS select x from S order by 1;}
+\end{alltt}
+Then run the range query 
+\begin{alltt}
+\textcolor{blue}{select x from indexedS where x between 1 and \textcolor{red}{n};}
+\end{alltt}
+where \textcolor{red}{\tt n} denotes the size of {\tt S}.  
+
+Then construct the following table which contains (a) the average execution time to build the btree index
+and (2) the average time to run the range query.
+\begin{center}
+{\footnotesize
+\begin{tabular}{c|c|c}
+size $n$ of relation {\tt S} & avg execution time to create index {\tt indexedS} & avg execution time for range query (in ms) \\ \hline
+$10^1$ & &\\
+$10^2$ & &\\
+$10^3$ &  &\\
+$10^4$ & &\\
+$10^5$ &  &\\
+$10^6$ &  &\\
+$10^7$ & &\\
+$10^8$ & &\\
+\end{tabular}
+}
+\end{center}
+What are your observations about the query plans and execution times to create  {\tt indexedS} and the execution times for sorting the differently sized bags {\tt indexedS}?   Compare your answer with those for the above sorting problems.
+\end{enumerate}
+\item \textcolor{red}{\bf Practice problem-not graded}.
+
+Typically, the {\tt makeS} function returns a bag instead of a set.   In the problems in this section, you are to conduct
+experiments to measure the execution times to eliminate duplicates.   
+
+\begin{enumerate}
+\item\label{duplicateDistinct} 
+Write a SQL query that uses the \blue{\tt DISTINCT} clause to eliminate duplicates in {\tt S} and 
+report you results in a table such as that in Problem~\ref{sortTimea}.
+\item\label{duplicateGroupBy}  Write a SQL query that uses the \blue{\tt GROUP BY} clause to eliminate duplicates in {\tt S} and 
+report you results in a table such as that in Problem~\ref{sortTimea}.
+\item Compare and contrast the results you have obtained in problems~\ref{duplicateDistinct} and \ref{duplicateGroupBy}.
+Again, consider using \blue{\tt explain analyze} to look at query plans.
+
+\end{enumerate}
+
+\end{enumerate}
+
+\newpage
+\section{Indexes and Indexing}
+Indexes on data (1) permit faster lookup on data items and (2) may speed up query processing on such data.
+Speedups can be substantial.     The purpose of the problems in this section are to explore this.   Some other problems in this section
+are designed to understand the workings of the \emph{B$^+$-tree} and the \emph{extensible hashing} data structures.
+
+\paragraph{Discussion}
+PostgreSQL permit the creation of a variety of indexes on tables.   We will review such {\tt index creation} and examine their
+impact on data lookup and query processing.
+For more details, see the PostgreSQL manual:
+\begin{center}
+\textcolor{blue}{https://www.postgresql.org/docs/13/indexes.html}
+\end{center}
+
+\begin{example}
+The following SQL statements create indexes on columns or combinations
+of columns of the {\tt personSkill} relation.\footnote{Incidentally, when a primary key is declared when 
+a relation is created, PostgreSQL will create a btree index on this key for the relation.}   Notice that there are \[2^{arity(\mathtt{personSkill})}-1 = 2^2-1 = 3\] such possible
+indexes.  
+
+{\small
+\begin{alltt}
+\textcolor{blue}{
+create index pid_index on personSkill (pid);                  \textcolor{red}{-- index on pid attribute}
+create index skill_index on personSkill (skill);              \textcolor{red}{-- index on skill attribute}
+create index pid_skill_index on personSkill (pid,skill);      \textcolor{red}{-- index (pid, skill)}
+}
+\end{alltt}}
+\end{example}
+\begin{example}
+It is possible to declare the type of index: {\tt btree} or {\tt hash}. When no index type is specified, the default is {\tt btree}.
+If instead of a Btree, a \emph{hash index} is desired, then it is necessary
+to specify a \textcolor{teal}{\tt using hash} qualifier:
+{\small
+\begin{alltt}
+\textcolor{blue}{
+create index pid_hash on personSkill \textcolor{teal}{using hash} (pid);  \textcolor{red}{-- hash index on pid attribute }                                                                                                                                              
+}
+\end{alltt}}
+\end{example}
+
+\begin{example}
+It is possible to create an index on a relation based on a \emph{scalar expression} or a \emph{function} defined over the attributes
+of that relation.    Consider the following (immutable) function which computes the number of skills of a person:
+{\small
+\begin{alltt}
+\textcolor{blue}{
+create or replace function numberOfSkills(p integer) returns integer as
+$$
+    select count(1)::int 
+    from   personSkill 
+    where  pid = p;
+$$ language SQL immutable;}
+\end{alltt}
+}                                                                                                  
+Then the following is an index defined on the \textcolor{teal}{\tt numberOfSkills} values of persons:
+{\small
+\begin{alltt}
+\textcolor{blue}{
+create index numberOfSkills_index on personSkill (\textcolor{teal}{numberOfSkills(pid)});}
+\end{alltt}
+Such an index is useful for queries that use this function such as
+\begin{alltt}
+\textcolor{blue}{select pid, skill from personSkill where \textcolor{teal}{numberOfSkills(pid)} > 2;}
+\end{alltt}
+}
+\end{example}
+
+We now turn to the problems in this section.
+
+\begin{enumerate}[resume]
+\item\label{secondaryIndexes}\bluebullet\ Consider a relation {\tt Student(sid text, sname text, major, year)}.   A tuple
+$(s, n, m, y)$ is in {\tt Student} when $s$ is the sid of a student and $n$, $m$, and $y$ are that
+student's name, major, and birth year.  Further,
+consider a relation {\tt Enroll(sid text, cno text, grade text)}.   A triple $(s, c, g)$ is in {\tt Enroll} when the student with sid $s$ was enrolled in the course with cname $c$ and obtained a letter grade $g$ in that course. 
+
+We are interested in answering queries of the form
+{\footnotesize
+\begin{alltt}{\blue{
+select sid, sname, major, byear 
+from   Student 
+where  sid in (select sid
+               from   Enroll sid
+               where  cno = \red{c} [and|or|and not] grade = \red{g});}}
+\end{alltt}  
+}
+Here \textcolor{red}{\tt c} denotes a course name and \textcolor{red}{\tt g} denotes a letter grade.
+
+Read Section 14.1.7 `Indirection in Secondary Indexes' in your textbook \emph{Database Systems The Complete Book} by Garcia-Molina, Ullman, and Widom.   Of particular interest are (a) the concept of \emph{buckets} (Figure 14.7) which are sets of tids and (b)
+the technique of performing set operations (like intersections) on relevant buckets (Figure 14.8) to answer queries of the form as shown above.
+
+The goal of this problem is to use object-relational SQL to simulate these concepts. To make things more concrete, consider the following {\tt Student} and {\tt Enroll} relations:
+
+
+\begin{center}
+{\footnotesize
+\begin{alltt}
+Student:
+ sid  | sname  |  major  | byear 
+------+--------+---------+-------
+ s100 | Eric   | CS      |  1988
+ s101 | Nick   | Math    |  1991
+ s102 | Chris  | Biology |  1977
+ s103 | Dinska | CS      |  1978
+ s104 | Zanna  | Math    |  2001
+ s105 | Vince  | CS      |  2001
+\end{alltt}
+}
+\end{center}
+
+\begin{center}
+{\footnotesize
+\begin{alltt}
+Enroll:
+ sid  | cno  | grade 
+------+------+-------
+ s100 | c200 | A
+ s100 | c201 | B
+ s100 | c202 | A
+ s101 | c200 | B
+ s101 | c201 | A
+ s101 | c202 | A
+ s101 | c301 | C
+ s101 | c302 | A
+ s102 | c200 | B
+ s102 | c202 | A
+ s102 | c301 | B
+ s102 | c302 | A
+ s103 | c201 | A
+ s104 | c201 | D
+\end{alltt}
+}
+\end{center}
+
+Now consider associating a tuple id (tid) with each tuple in {\tt Enroll}:
+{\footnotesize
+\begin{alltt}
+ tid | sid  | cno  | grade 
+-----+------+------+-------
+   1 | s100 | c200 | A
+   2 | s100 | c201 | B
+   3 | s100 | c202 | A
+   4 | s101 | c200 | B
+   5 | s101 | c201 | A
+   6 | s101 | c202 | A
+   7 | s101 | c301 | C
+   8 | s101 | c302 | A
+   9 | s102 | c200 | B
+  10 | s102 | c202 | A
+  11 | s102 | c301 | B
+  12 | s102 | c302 | A
+  13 | s103 | c201 | A
+  14 | s104 | c201 | D
+\end{alltt}
+}
+
+Use object-relational SQL to construct two secondary indexes {\tt indexOnCno} and {\tt indexOnGrade} on the {\tt Enroll} relation.  These indexes should be stored in two separate relations which you can conveniently call
+{\tt indexOnCno} and {\tt indexOnGrade}, respectively.
+two object-relational views in a manner that simulates the situation illustrated in Figure 14.8.  
+In particular, do {\bf not} use the `\blue{\tt create index}' mechanism of SQL to construct these indexes.
+
+Then, using the {\tt indexOnCno} and {\tt indexOnGrade} views and the technique of \emph{intersecting buckets}, write a function 
+{\tt FindStudents(booleanOperation text, cno text, grade text)} that can be used to answer queries of the form as shown above.   (Here the booleanOperation is a string which can be 'and', 'or', or 'and not'.)
+
+For example, the query
+{\footnotesize
+\begin{alltt}
+\blue{select * from FindStudents('and', 'c202', 'A');}
+\end{alltt}}
+should return the same result as that of the query
+{\footnotesize
+\begin{alltt}{\blue{
+select sid, sname, major, byear 
+from   Student 
+where  sid in (select sid
+               from   Enroll sid
+               where  cno = 'c202' and grade = 'A');}}
+\end{alltt}  
+}
+
+Test your solution for the following cases on the {\tt Student} and {\tt Enroll} relation given for this problem:
+\begin{enumerate}
+\item {\tt select * from FindStudents('and', 'c202', 'A');}
+\item {\tt select * from FindStudents('or', 'c202', 'A');}
+\item {\tt select * from FindStudents('and not', 'c202', 'A');}
+\end{enumerate}
+
+\item \textcolor{red}{\bf Practice problem--not graded}.
+Read Section~14.7 `Bitmap Indexes' in your textbook \emph{Database Systems The Complete Book} by Garcia-Molina, Ullman, and Widom.   In particular, look at Example~14.39 for an example of a bitmap index for a secondary index.
+
+Next, revisit Problem~\ref{secondaryIndexes}.   There, we considered two secondary indexes {\tt indexOnCno} and
+{\tt indexOnGrade}.  We will now consider the corresponding bitmap indexes
+{\tt bitmapIndexOnCno} and {\tt bitmapIndexOnGrade}:
+
+{\footnotesize
+\begin{alltt}
+bitmapIndexOnCno
+ cno  |     bit-vector     
+------+----------------
+ c200 | 10010000100000
+ c201 | 01001000000011
+ c202 | 00100100010000
+ c301 | 00000010001000
+ c302 | 00000001000100
+\end{alltt}}
+and
+{\footnotesize
+\begin{alltt}
+bitmapIndexOnGrade
+ grade |     bit-vector     
+-------+----------------
+ A     | 10101101010110
+ B     | 01010000101000
+ C     | 00000010000000
+ D     | 00000000000001
+\end{alltt}}
+
+Use object-relational SQL to construct two secondary indexes {\tt bitmapIndexOnCno} and {\tt bitmapIndexOnGrade} as
+two object-relational relations in a manner that simulates the situation just illustrated above.
+
+Then, using the {\tt bitmapIndexOnCno} and {\tt bitmapIndexOnGrade} relations and the technique of forming the bitmap-{\tt AND}, bitmap-{\tt OR}, and bitmap-{\tt AND NOT} of two bit-vectors,  write a function 
+{\tt FindStudents(booleanOperation text, cno text, grade text)} that can be used to answer queries of the form as shown in Problem~\ref{secondaryIndexes}.
+
+For example, the query
+{\footnotesize
+\begin{alltt}
+\blue{select * from FindStudents('and', 'c202', 'A');}
+\end{alltt}}
+should return the same result as that of the query
+{\footnotesize
+\begin{alltt}{\blue{
+select sid, sname, major, byear 
+from   Student 
+where  sid in (select sid
+               from   Enroll sid
+               where  cno = 'c202' and grade = 'A');}}
+\end{alltt}  
+}
+
+
+Test your solution for the following cases on the {\tt Student} and {\tt Enroll} relation given for this problem:
+\begin{enumerate}
+\item {\tt select * from FindStudents('and', 'c202', 'A');}
+\item {\tt select * from FindStudents('or', 'c202', 'A');}
+\item {\tt select * from FindStudents('and not', 'c202', 'A');}
+\end{enumerate}
+\end{enumerate}
+
+\begin{enumerate}[resume]
+\item \redbullet\ 
+Consider the following parameters:
+\begin{center}
+\begin{tabular}{lcl}
+block size         & = & 4096 bytes \\
+block-address size & = & 9 bytes \\
+block access time (I/O operation) & = & 10 ms (micro seconds) \\
+record size       & = & 150 bytes \\
+record primary key size   & = & 8 bytes \\
+\end{tabular}
+\end{center}
+Assume that there is a B$^+$-tree, adhering to these parameters, that
+indexes 1 billion ($10^9$) records on their primary key values.
+
+Provide answers to the following problems and 
+show the intermediate computations leading to your answers.
+
+\begin{enumerate}
+\item   Specify (in ms) the minimum time to determine if there is a record with
+  key $k$ in the B$^+$-tree.
+(In this problem, you can not assume that a key value that appears in an non-leaf node has a corresponding record with that key value.)
+
+\item \label{maximum} Specify (in ms) the maximum time to insert a record
+with key $k$ in the B$^+$-tree assuming that this record was not already in the data file.
+
+\item  How large must main memory be to hold the first two levels of the B$^+$-tree? How about the first three levels?
+\end{enumerate}
+
+\newpage
+\item \redbullet\  Consider the following B$^+$-tree of order 2 that holds records
+  with keys 2, 8, and 11.\footnote{Recall that (a) an internal node of a
+  B$^+$-tree of order 2 can have either 1 or 2 keys values, and 2 or 3
+  sub-trees, and (b) a leaf node can have either 1 or 2 key values.}
+  
+\begin{figure}[h]
+\centering
+\includegraphics[height = 1.5in, width = 3in]{btree.png}
+\end{figure}
+\begin{enumerate}
+
+\item \label{btree-insert} Show the contents of your $B^+$-tree after
+inserting records with keys 4, 10, 12, 1, 7, and 5 in that order.
+
+{\bf Strategy for splitting leaf nodes}: when a leaf node $n$ needs to be split into two nodes $n_1$ and $n_2$ (where $n_1$ will point to $n_2$), then use the
+rule that an even number of keys in $n$ is moved into $n_1$ and an odd number of keys is moved into $n_2$.   So if $n$ becomes conceptually \fbox{$k_1|k_2|k_3$} then $n_1$ should be \fbox{$k_1|k_2$} and $n_2$ should be \fbox{$k_3|\ \ $} and $n_1 \rightarrow n_2$.
+
+\item\label{btreedelete} Starting from your answer in question~\ref{btree-insert}, show
+  the contents of your $B^+$-tree after deleting records with keys 12, 2, and 11, in that order.
+\item Starting from your answer in question~\ref{btreedelete}, show
+  the contents of your $B^+$-tree after deleting records with keys 5, 1, and 4, in that order.
+\end{enumerate}
+
+\newpage
+\item \redbullet\ 
+Consider an extensible hashing data structure wherein (1) the
+initial global depth is set at $1$ and (2) all directory pointers point
+to the same {\bf empty} bucket which has local depth $0$. So the hashing
+structure looks like this:
+\begin{figure}[h]
+        \centering
+        \includegraphics[height = 1.5in, width = 3in]{hash.png}
+    \end{figure}
+\bigskip
+Assume that a bucket can hold at most two records.
+
+\begin{enumerate}
+\item\label{ext-insert} Show the state of the hash data structure after each of the
+  following insert sequences:\footnote{You should interpret the key values as bit strings of length 4.   So for example,  key value 7 is represented as the bit string 0111 
+and key value 2 is represented as the bit string 0010.}
+
+\begin{enumerate}
+\item records with keys 6 and 7.
+\item records with keys 1 and 2.
+\item records with keys 9 and 4.
+\item records with keys 8 and 3.
+\end{enumerate}
+
+
+\item \label{ext-two} Starting from the answer you obtained for
+  Question~\ref{ext-insert}, show the state of the hash data structure
+  after each of the following delete sequences:
+
+\begin{enumerate}
+\item records with keys 9 and 6.
+\item records with keys 4 and 1.
+\item records with keys 2 and 8.
+\end{enumerate}
+
+As in the text book, the bit strings are interpreted starting from their left-most bit and continuing to the right subsequent bits. 
+
+\end{enumerate}
+\end{enumerate}
+
+
+
+\newpage
+The goal in the next problems is to study the behavior of indexes for various different sized instances\footnote{(Three different sizes, small, medium, large suffice for your experiment.} of the {\tt Person}, {\tt worksFor}, and {\tt Knows} relations
+and for various queries:
+\begin{enumerate}[resume]
+\item \redbullet\  Create an appropriate index on the {\tt worksFor} relation that speedups the lookup query
+\begin{alltt}\textcolor{blue}{
+select pid from worksFor where cname = \red{c};}
+\end{alltt}
+Here \textcolor{red}{c} is a company name.
+
+Illustrate this speedup by finding the execution times for this query for various sizes of the {\tt worksFor} relation.  
+\item \redbullet\  Create an appropriate index on the {\tt worksFor} relation that speedups the range query
+\begin{alltt}\textcolor{blue}{
+select pid, cname
+from   worksFor
+where  \textcolor{red}{s1} <= salary and salary <= \textcolor{red}{s2};}
+\end{alltt}
+Here \textcolor{red}{s1} and \textcolor{red}{s2} are two salaries with $\text{s1} < \text{s2}$.
+
+Illustrate this speedup by finding the execution times for this query for various sizes of the {\tt worksFor} relation.
+\item \redbullet\  Create indexes on the {\tt worksFor} relation that speedup the multiple conditions query
+\begin{alltt}\textcolor{blue}{
+select pid
+from   worksFor
+where  salary = \red{s} and cname = \red{c};}
+\end{alltt}
+
+Here \textcolor{red}{s} is a salary and \textcolor{red}{c} is a company name.
+
+Illustrate this speedup by finding the execution times for this query for various sizes of the {\tt worksFor} relation.
+\item \redbullet\  Create indexes on the appropriate relations that speedup the semi-join [anti semi-join] query
+\begin{alltt}\textcolor{blue}{
+select pid, pname 
+from   Person 
+where  pid [not] in (select pid from worksFor where cname = \red{c});}
+\end{alltt}
+
+Here \textcolor{red}{c} is a company name.
+
+Illustrate this speedup by finding the execution times for this query for various sizes of the {\tt Person} and {\tt worksFor} relations.
+
+\item \textcolor{red}{\bf Practice problem--not graded.}
+
+Create indexes that speedup the path-discovery query
+\begin{alltt}\textcolor{blue}{
+select distinct k1.pid1, k3.pid2
+from   knows k1, knows k2, knows k3 
+where  k1.pid2 = k2.pid1 and k2.pid2 = k3.pid1;}
+\end{alltt}
+Illustrate this speedup by finding the execution times for this query for various sizes of the {\tt Knows} relation.
+\end{enumerate}
+
+\end{document}
